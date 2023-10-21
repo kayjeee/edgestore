@@ -1,33 +1,73 @@
 import { initEdgeStore } from '@edgestore/server';
-import { createEdgeStoreNextHandler } from '@edgestore/server/adapters/next/app';
+import {
+  createEdgeStoreNextHandler,
+  type CreateContextOptions,
+} from '@edgestore/server/adapters/next/app';
+// import { useSession } from 'next-auth/react'
+import { z } from 'zod';
 
-const es = initEdgeStore.create();
+type Context = {
+  userId: string;
+  userRole: 'admin' | 'user';
+};
 
-/**
- * This is the main router for the edgestore buckets.
- */
-const edgeStoreRouter = es.router({
-  /**
-   * A public image bucket with no validation.
-   */
-  myPublicImages: es.imageBucket(),
-
-  /**
-   * This accepts any file type.
-   */
-  myPublicFiles: es.fileBucket(),
+const inputSchema = z.object({
+  type: z.enum(['post', 'profile', 'rdo']),
 });
 
-/**
- * This is used to create the type-safe client for the frontend.
- */
-export type EdgeStoreRouter = typeof edgeStoreRouter;
+function createContext({ req }: CreateContextOptions): Context {
+  // const { data } = useSession()
 
-/**
- * The next handler is used to create the API route.
- */
+  // if (!data || !data.user) {
+  //   return {
+  //     userId: '',
+  //     userRole: 'user',
+  //   }
+  // }
+
+  return {
+    userId: '123',
+    userRole: 'admin',
+  };
+}
+
+const es = initEdgeStore.context<Context>().create();
+
+const imageBucketConfig = {
+  maxSize: 5 * 1024 * 1024,
+  accept: ['image/jpeg', 'image/jpg', 'image/png'],
+};
+
+function createMetadata(ctx: Context, input: { type: string }) {
+  return {
+    userRole: ctx.userRole,
+    userId: ctx.userId,
+    type: input.type,
+  };
+}
+
+const edgeStoreRouter = es.router({
+  publicImages: es
+    .imageBucket(imageBucketConfig)
+    .input(inputSchema)
+    .path(({ ctx, input }) => [{ type: input.type }, { owner: ctx.userId }])
+    .metadata(({ ctx, input }) => createMetadata(ctx, input)),
+
+  protectedFiles: es
+    .fileBucket(imageBucketConfig)
+    .input(inputSchema)
+    .path(({ ctx, input }) => [{ type: input.type }, { owner: ctx.userId }])
+    .metadata(({ ctx, input }) => createMetadata(ctx, input))
+    .accessControl({
+      OR: [{ userId: { path: 'owner' } }, { userRole: { eq: 'admin' } }],
+    }),
+});
+
 const handler = createEdgeStoreNextHandler({
   router: edgeStoreRouter,
+  createContext,
 });
 
 export { handler as GET, handler as POST };
+
+export type EdgeStoreRouter = typeof edgeStoreRouter;

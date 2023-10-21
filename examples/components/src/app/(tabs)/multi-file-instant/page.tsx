@@ -52,8 +52,14 @@ function MultiImageExample() {
           await Promise.all(
             addedFiles.map(async (addedFileState) => {
               try {
-                const res = await edgestore.myPublicFiles.upload({
+                const res = await edgestore.protectedFiles.upload({
                   file: addedFileState.file,
+                  input: {
+                    type: 'rdo',
+                  },
+                  options: {
+                    temporary: true,
+                  },
                   onProgressChange: async (progress) => {
                     updateFileProgress(addedFileState.key, progress);
                     if (progress === 100) {
